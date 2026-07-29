@@ -11,7 +11,9 @@ class TestCausalSelfAttention:
         block_size = 8
         emb_size = 32
         batch_size = 4
-        attn = gpt.CausalSelfAttention(num_heads, block_size, emb_size)
+        attn = gpt.CausalSelfAttention(
+            num_heads=num_heads, block_size=block_size, emb_size=emb_size
+        )
         x = torch.rand((batch_size, block_size, emb_size))
 
         out = attn.forward(x)
@@ -29,6 +31,23 @@ class TestMLP:
         x = torch.rand((batch_size, block_size, emb_size))
 
         out = mlp.forward(x)
+
+        assert out.shape == (batch_size, block_size, emb_size)
+        assert not torch.allclose(out, x)
+
+
+class TestTransfomer:
+    def test_forward(self):
+        num_heads = 2
+        block_size = 8
+        emb_size = 32
+        batch_size = 4
+        transformer = gpt.Transformer(
+            num_heads=num_heads, block_size=block_size, emb_size=emb_size
+        )
+        x = torch.rand((batch_size, block_size, emb_size))
+
+        out = transformer.forward(x)
 
         assert out.shape == (batch_size, block_size, emb_size)
         assert not torch.allclose(out, x)
