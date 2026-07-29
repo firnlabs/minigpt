@@ -11,7 +11,9 @@ class TestCausalSelfAttention:
         block_size = 8
         emb_size = 32
         batch_size = 4
-        attn = gpt.CausalSelfAttention(num_heads, block_size, emb_size)
+        attn = gpt.CausalSelfAttention(
+            num_heads=num_heads, block_size=block_size, emb_size=emb_size
+        )
         x = torch.rand((batch_size, block_size, emb_size))
 
         out = attn.forward(x)

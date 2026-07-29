@@ -8,7 +8,7 @@ class CausalSelfAttention(nn.Module):
     """Causal self-attention block."""
 
     def __init__(
-        self, num_heads, block_size, emb_size, dropout_p=0.5, bias=False
+        self, *, num_heads, block_size, emb_size, dropout_p=0.5, bias=False
     ) -> None:
         super().__init__()
         self._num_heads = num_heads
