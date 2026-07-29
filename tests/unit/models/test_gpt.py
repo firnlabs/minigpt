@@ -16,5 +16,19 @@ class TestCausalSelfAttention:
 
         out = attn.forward(x)
 
-        assert not torch.allclose(x, out)
+        assert not torch.allclose(out, x)
         assert out.shape == (batch_size, block_size, emb_size)
+
+
+class TestMLP:
+    def test_forward(self):
+        block_size = 8
+        emb_size = 32
+        batch_size = 4
+        mlp = gpt.MLP(emb_size=32)
+        x = torch.rand((batch_size, block_size, emb_size))
+
+        out = mlp.forward(x)
+
+        assert out.shape == (batch_size, block_size, emb_size)
+        assert not torch.allclose(out, x)
