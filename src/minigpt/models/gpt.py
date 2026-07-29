@@ -61,7 +61,7 @@ class CausalSelfAttention(nn.Module):
 
 
 class MLP(nn.Module):
-    """Multi-layer perceptron (feed-forward network)."""
+    """Multi-layer perceptron (feed-forward network) block."""
 
     def __init__(
         self, emb_size: int, dropout_p: float = 0.5, bias: bool = False
@@ -77,4 +77,35 @@ class MLP(nn.Module):
         x = self._gelu(x)
         x = self._c_proj(x)
         x = self._dropout(x)
+        return x
+
+
+class Transformer(nn.Module):
+    """Transformer block."""
+
+    def __init__(
+        self,
+        *,
+        num_heads: int,
+        block_size: int,
+        emb_size: int,
+        dropout_p: float = 0.5,
+        bias: bool = False,
+    ) -> None:
+        super().__init__()
+        self._ln1 = nn.LayerNorm(emb_size, bias=bias)
+        self._attn = CausalSelfAttention(
+            num_heads=num_heads,
+            block_size=block_size,
+            emb_size=emb_size,
+            dropout_p=dropout_p,
+            bias=bias,
+        )
+        self._ln2 = nn.LayerNorm(emb_size, bias=bias)
+        self._mlp = MLP(emb_size, dropout_p, bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Use pre-LN residual connections
+        x = x + self._attn(self._ln1(x))
+        x = x + self._mlp(self._ln2(x))
         return x
