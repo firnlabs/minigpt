@@ -1,0 +1,20 @@
+"""Tests for models/gpt.py."""
+
+import torch
+
+from minigpt.models import gpt
+
+
+class TestCausalSelfAttention:
+    def test_forward(self):
+        num_heads = 2
+        block_size = 8
+        emb_size = 32
+        batch_size = 4
+        attn = gpt.CausalSelfAttention(num_heads, block_size, emb_size)
+        x = torch.rand((batch_size, block_size, emb_size))
+
+        out = attn.forward(x)
+
+        assert not torch.allclose(x, out)
+        assert out.shape == (batch_size, block_size, emb_size)
