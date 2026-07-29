@@ -10,7 +10,6 @@ class CausalSelfAttention(nn.Module):
     def __init__(
         self, num_heads, block_size, emb_size, dropout_p=0.5, bias=False
     ) -> None:
-        """Initialize."""
         super().__init__()
         self._num_heads = num_heads
         self._emb_size = emb_size
@@ -35,7 +34,6 @@ class CausalSelfAttention(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass."""
         B, T, C = x.shape
         assert C == self._emb_size
         assert T <= self._block_size
@@ -60,3 +58,23 @@ class CausalSelfAttention(nn.Module):
         y = y.contiguous().view(B, T, C)  # shape: (B, T, C)
 
         return self._resid_dropout(self._c_proj(y))  # shape: (B, T, C)
+
+
+class MLP(nn.Module):
+    """Multi-layer perceptron (feed-forward network)."""
+
+    def __init__(
+        self, emb_size: int, dropout_p: float = 0.5, bias: bool = False
+    ) -> None:
+        super().__init__()
+        self._c_fc = nn.Linear(emb_size, 4 * emb_size, bias=bias)  # C -> 4C
+        self._gelu = nn.GELU()  # 4C -> 4C
+        self._c_proj = nn.Linear(4 * emb_size, emb_size, bias=bias)  # 4C -> C
+        self._dropout = nn.Dropout(dropout_p)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self._c_fc(x)
+        x = self._gelu(x)
+        x = self._c_proj(x)
+        x = self._dropout(x)
+        return x
