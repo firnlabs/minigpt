@@ -79,14 +79,16 @@ def test_train_model(
 ):
     train_dataloader, val_dataloader = train_val_dataloaders
     model = request.getfixturevalue(model_fixture_name)
-    if isinstance(model, bigram.BigramLanguageModel):
-        optimizer = optim.AdamW(model.parameters(), lr=hparams.learning_rate)
-    elif isinstance(model, gpt.GPT):
+    is_gpt = model_fixture_name == "gpt_model"
+    if is_gpt:
         optimizer = model.configure_optimizers(
             weight_decay=hparams.weight_decay,
             learning_rate=hparams.learning_rate,
             betas=hparams.betas,
         )
+        lrs_before = [pg["lr"] for pg in optimizer.param_groups]
+    else:  # implies bigram model
+        optimizer = optim.AdamW(model.parameters(), lr=hparams.learning_rate)
     params_before = [p.clone() for p in model.parameters()]
 
     training.train_model(
@@ -97,8 +99,15 @@ def test_train_model(
         hparams.max_iters,
         hparams.eval_interval,
         hparams.eval_iters,
+        use_lr_scheduler=is_gpt,
     )
 
+    if is_gpt:
+        lrs_after = [pg["lr"] for pg in optimizer.param_groups]
+        assert all(
+            lr_before != lr_after
+            for lr_before, lr_after in zip(lrs_before, lrs_after, strict=True)
+        )
     params_changed = any(
         not torch.equal(p_before, p_after)
         for p_before, p_after in zip(params_before, model.parameters(), strict=True)
