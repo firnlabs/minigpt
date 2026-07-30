@@ -64,6 +64,7 @@ def train_model(
     warmup_iters: int = 100,
     lr_decay_iters: int | None = None,
     min_lr: float | None = None,
+    grad_clip: float | None = None,
 ) -> None:
     """Trains the model."""
     if use_lr_scheduler:
@@ -102,4 +103,6 @@ def train_model(
         _, loss = model(xb, yb)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
+        if grad_clip is not None:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
         optimizer.step()
