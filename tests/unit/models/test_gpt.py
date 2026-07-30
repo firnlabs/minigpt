@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import pytest
 import torch
+from torch import nn
 
 from minigpt.models import gpt
 
@@ -103,8 +104,38 @@ class TestTransfomer:
 
 
 class TestGPT:
-    def test_init_weights(self):
-        pass  # TODO: implement
+    @pytest.mark.parametrize("bias, is_residual", [(False, False), (True, True)])
+    def test_init_weights_linear(self, gpt_model, config, bias, is_residual):
+        module = nn.Linear(config.emb_size, config.emb_size, bias=bias)
+        module._is_residual = is_residual
+
+        gpt_model._init_weights(module)
+
+        assert torch.allclose(module.weight.mean(), torch.tensor(0.0), atol=1e-2)
+        if is_residual:
+            exp_std = 0.02 * (2 * config.num_layers) ** -0.5
+        else:
+            exp_std = 0.02
+        assert torch.allclose(module.weight.std(), torch.tensor(exp_std), atol=1e-2)
+        if bias:
+            assert module.bias.all() == 0.0
+        else:
+            assert module.bias is None
+
+    def test_init_weights_embedding(self, gpt_model, config):
+        module = nn.Embedding(config.vocab_size, config.emb_size)
+
+        gpt_model._init_weights(module)
+
+        assert torch.allclose(module.weight.mean(), torch.tensor(0.0), atol=1e-2)
+        assert torch.allclose(module.weight.std(), torch.tensor(0.02), atol=1e-2)
+
+    def test_init_weights_layernorm(self, gpt_model, config):
+        module = nn.LayerNorm(config.emb_size, bias=True)
+
+        gpt_model._init_weights(module)
+
+        assert module.bias.all() == 0.0
 
     def test_forward_no_targets(self, gpt_model, config, idx):
         logits, loss = gpt_model.forward(idx)
