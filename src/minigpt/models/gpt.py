@@ -4,6 +4,10 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+# Standard deviation for initialization described in Radford et al. (2018)
+# (https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf)
+_INIT_STD = 0.02
+
 
 class CausalSelfAttention(nn.Module):
     """Causal self-attention block."""
@@ -127,6 +131,7 @@ class GPT(nn.Module):
         bias: bool = False,
     ) -> None:
         super().__init__()
+        self._num_layers = num_layers
         self._block_size = block_size
         self._wte = nn.Embedding(vocab_size, emb_size)
         self._wpe = nn.Embedding(block_size, emb_size)
@@ -150,7 +155,26 @@ class GPT(nn.Module):
         self._lm_head.weight = self._wte.weight
 
     def _init_weights(self, module: nn.Module) -> None:
-        raise NotImplementedError  # TODO: implement
+        if isinstance(module, nn.Linear):
+            # use default standard deviation
+            std = _INIT_STD
+
+            # scale standard deviation for residual projection layers
+            if getattr(module, "_is_residual", False):
+                std *= (2 * self._num_layers) ** -0.5
+
+            nn.init.normal_(module.weight, mean=0.0, std=std)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+
+        elif isinstance(module, nn.Embedding):
+            nn.init.normal_(module.weight, mean=0.0, std=_INIT_STD)
+
+        elif isinstance(module, nn.LayerNorm):
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        else:
+            raise ValueError(f"Unsupported module: {type(module)}")
 
     def forward(
         self, idx: torch.Tensor, targets: torch.Tensor | None = None
