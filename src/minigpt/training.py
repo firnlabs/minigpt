@@ -82,9 +82,9 @@ def train_model(
             )
 
         # apply learning rate scheduler
-        assert lr_decay_iters is not None
-        assert min_lr is not None
         if use_lr_scheduler:
+            assert lr_decay_iters is not None
+            assert min_lr is not None
             lr = _get_learning_rate(
                 base_lr=base_lr,
                 min_lr=min_lr,
