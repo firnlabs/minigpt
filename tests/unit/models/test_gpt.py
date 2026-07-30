@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import pytest
 import torch
 from torch import nn
+from torch import optim
 
 from minigpt.models import gpt
 
@@ -136,6 +137,25 @@ class TestGPT:
         gpt_model._init_weights(module)
 
         assert module.bias.all() == 0.0
+
+    def test_configure_optimizers(self, gpt_model):
+        # Values derived from Brown et al. (2020)
+        # (https://arxiv.org/pdf/2005.14165)
+        learning_rate = 6e-4
+        weight_decay = 0.1
+        betas = (0.9, 0.95)
+
+        optimizer: optim.Optimizer = gpt_model.configure_optimizers(
+            weight_decay=weight_decay, learning_rate=learning_rate, betas=betas
+        )
+
+        state = optimizer.state_dict()
+        groups = state["param_groups"]
+        assert len(groups) == 2
+        assert groups[0]["lr"] == learning_rate
+        assert groups[0]["weight_decay"] == weight_decay
+        assert groups[1]["lr"] == learning_rate
+        assert groups[1]["weight_decay"] == 0.0
 
     def test_forward_no_targets(self, gpt_model, config, idx):
         logits, loss = gpt_model.forward(idx)

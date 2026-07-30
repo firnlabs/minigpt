@@ -2,6 +2,7 @@
 
 import torch
 from torch import nn
+from torch import optim
 from torch.nn import functional as F
 
 # Standard deviation for initialization described in Radford et al. (2018)
@@ -185,6 +186,25 @@ class GPT(nn.Module):
                 nn.init.zeros_(module.bias)
         else:
             pass  # no-op
+
+    def configure_optimizers(
+        self, *, weight_decay: float, learning_rate: float, betas: tuple[float, float]
+    ) -> optim.Optimizer:
+        # Fetch all parameters that require gradients
+        params = {n: p for n, p in self.named_parameters() if p.requires_grad}
+
+        # --- split parameters based on dimension ---
+        # 2D weights of Linear and Embedding layers
+        decay_params = [p for _, p in sorted(params.items()) if p.dim() >= 2]
+        # 1D biases, LayerNorm
+        no_decay_params = [p for _, p in sorted(params.items()) if p.dim() < 2]
+
+        optim_groups = [
+            {"params": decay_params, "weight_decay": weight_decay},
+            {"params": no_decay_params, "weight_decay": 0.0},
+        ]
+
+        return optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
 
     def forward(
         self, idx: torch.Tensor, targets: torch.Tensor | None = None
