@@ -87,6 +87,7 @@ def test_train_model(
             betas=hparams.betas,
         )
         lrs_before = [pg["lr"] for pg in optimizer.param_groups]
+        grad_clip = 0.01
     else:  # implies bigram model
         optimizer = optim.AdamW(model.parameters(), lr=hparams.learning_rate)
     params_before = [p.clone() for p in model.parameters()]
@@ -100,6 +101,7 @@ def test_train_model(
         hparams.eval_interval,
         hparams.eval_iters,
         use_lr_scheduler=is_gpt,
+        grad_clip=grad_clip if is_gpt else None,
     )
 
     if is_gpt:
@@ -108,6 +110,7 @@ def test_train_model(
             lr_before != lr_after
             for lr_before, lr_after in zip(lrs_before, lrs_after, strict=True)
         )
+        assert all(torch.all(p.grad <= grad_clip) for p in model.parameters())
     params_changed = any(
         not torch.equal(p_before, p_after)
         for p_before, p_after in zip(params_before, model.parameters(), strict=True)
