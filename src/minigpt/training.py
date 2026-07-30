@@ -3,7 +3,10 @@
 import math
 
 import torch
+from torch import nn
 from torch import optim
+
+from minigpt import data
 
 
 def _get_learning_rate(
@@ -50,15 +53,26 @@ def estimate_loss(model, train_dataloader, val_dataloader, eval_iters: int):
 
 
 def train_model(
-    model,
-    train_dataloader,
-    val_dataloader,
+    model: nn.Module,
+    train_dataloader: data.DataLoader,
+    val_dataloader: data.DataLoader,
     optimizer: optim.Optimizer,
-    max_iters,
-    eval_interval,
-    eval_iters,
+    max_iters: int,
+    eval_interval: int,
+    eval_iters: int,
+    use_lr_scheduler: bool = False,
+    warmup_iters: int = 100,
+    lr_decay_iters: int | None = None,
+    min_lr: float | None = None,
 ) -> None:
     """Trains the model."""
+    if use_lr_scheduler:
+        base_lr = optimizer.param_groups[0]["lr"]
+        if lr_decay_iters is None:
+            lr_decay_iters = max_iters
+        if min_lr is None:
+            min_lr = base_lr / 10.0  # 10% of base
+
     for iter in range(max_iters):
         if iter % eval_interval == 0:
             losses = estimate_loss(model, train_dataloader, val_dataloader, eval_iters)
@@ -66,6 +80,20 @@ def train_model(
                 f"step {iter}: train loss {losses['train']:.4f},"
                 f" val loss {losses['val']:.4f}"
             )
+
+        # apply learning rate scheduler
+        assert lr_decay_iters is not None
+        assert min_lr is not None
+        if use_lr_scheduler:
+            lr = _get_learning_rate(
+                base_lr=base_lr,
+                min_lr=min_lr,
+                it=iter,
+                warmup_iters=warmup_iters,
+                lr_decay_iters=lr_decay_iters,
+            )
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = lr
 
         # sample a batch of data
         xb, yb = next(train_dataloader)

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 import pytest
+from pytest_mock import MockerFixture
 import torch
 from torch import optim
 
@@ -76,17 +77,22 @@ def test_train_model(
     train_val_dataloaders: tuple[data.DataLoader, data.DataLoader],
     model_fixture_name: str,
     request: pytest.FixtureRequest,
+    mocker: MockerFixture,
 ):
     train_dataloader, val_dataloader = train_val_dataloaders
     model = request.getfixturevalue(model_fixture_name)
-    if isinstance(model, bigram.BigramLanguageModel):
-        optimizer = optim.AdamW(model.parameters(), lr=hparams.learning_rate)
-    elif isinstance(model, gpt.GPT):
+    is_gpt = model_fixture_name == "gpt_model"
+    if is_gpt:
+        mock_get_learning_rate = mocker.patch(
+            "minigpt.training._get_learning_rate", return_value=hparams.learning_rate
+        )
         optimizer = model.configure_optimizers(
             weight_decay=hparams.weight_decay,
             learning_rate=hparams.learning_rate,
             betas=hparams.betas,
         )
+    else:  # implies bigram model
+        optimizer = optim.AdamW(model.parameters(), lr=hparams.learning_rate)
     params_before = [p.clone() for p in model.parameters()]
 
     training.train_model(
@@ -97,7 +103,11 @@ def test_train_model(
         hparams.max_iters,
         hparams.eval_interval,
         hparams.eval_iters,
+        use_lr_scheduler=is_gpt,
     )
+
+    if is_gpt:
+        mock_get_learning_rate.assert_called()
 
     params_changed = any(
         not torch.equal(p_before, p_after)
