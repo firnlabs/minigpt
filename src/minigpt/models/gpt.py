@@ -154,12 +154,22 @@ class GPT(nn.Module):
         # share weights between input token embeddings and output lm_head projection
         self._lm_head.weight = self._wte.weight
 
+        # Flag residual layers for specific initialization
+        for name, module in self.named_modules():
+            if name.endswith("_c_proj"):
+                module._is_residual = True
+
+        # Apply weight initialization
+        self.apply(self._init_weights)
+
     def _init_weights(self, module: nn.Module) -> None:
         if isinstance(module, nn.Linear):
             # use default standard deviation
             std = _INIT_STD
 
             # scale standard deviation for residual projection layers
+            # based on Radford et al. (2019)
+            # https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf
             if getattr(module, "_is_residual", False):
                 std *= (2 * self._num_layers) ** -0.5
 
@@ -174,7 +184,7 @@ class GPT(nn.Module):
             if module.bias is not None:
                 nn.init.zeros_(module.bias)
         else:
-            raise ValueError(f"Unsupported module: {type(module)}")
+            pass  # no-op
 
     def forward(
         self, idx: torch.Tensor, targets: torch.Tensor | None = None

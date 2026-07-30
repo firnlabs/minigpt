@@ -137,12 +137,6 @@ class TestGPT:
 
         assert module.bias.all() == 0.0
 
-    def test_init_weights_error_unsupported_module(self, gpt_model):
-        module = nn.Conv1d(3, 3, 1)
-
-        with pytest.raises(ValueError):
-            gpt_model._init_weights(module)
-
     def test_forward_no_targets(self, gpt_model, config, idx):
         logits, loss = gpt_model.forward(idx)
 
