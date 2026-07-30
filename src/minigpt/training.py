@@ -1,7 +1,35 @@
 """Model training routines."""
 
+import math
+
 import torch
 from torch import optim
+
+
+def _get_learning_rate(
+    *, base_lr: float, min_lr: float, it: int, warmup_iters: int, lr_decay_iters: int
+) -> float:
+    """Calculates learning rate with linear warmup and cosine decay.
+
+    Following the linear warmup (Goyal et al., 2017) and cosine decay
+    (Loshchilov & Hutter, 2016) schedule common in LLM training.
+
+    References:
+        - Implementation adapted from Andrej Karpathy's nanoGPT:
+          https://github.com/karpathy/nanoGPT/blob/master/train.py
+        - Goyal et al. (2017): https://arxiv.org/abs/1706.02677
+        - Loshchilov & Hutter (2016): https://arxiv.org/abs/1608.03983
+    """
+    # NOTE: warmup_iters == 0 implies skipping the warmup phase entirely
+    if warmup_iters > 0 and it < warmup_iters:
+        lr = base_lr * it / warmup_iters
+    elif it > lr_decay_iters:
+        lr = min_lr
+    else:
+        decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
+        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
+        lr = min_lr + coeff * (base_lr - min_lr)
+    return lr
 
 
 @torch.no_grad()
