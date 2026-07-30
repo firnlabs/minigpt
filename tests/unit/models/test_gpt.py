@@ -51,3 +51,51 @@ class TestTransfomer:
 
         assert out.shape == (batch_size, block_size, emb_size)
         assert not torch.allclose(out, x)
+
+
+class TestGPT:
+    def test_forward_no_targets(self):
+        vocab_size = 4
+        num_layers = 2
+        num_heads = 2
+        block_size = 8
+        emb_size = 32
+        batch_size = 4
+        vocab_size = 4
+        gpt_model = gpt.GPT(
+            vocab_size=vocab_size,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            block_size=block_size,
+            emb_size=emb_size,
+        )
+        idx = torch.randint(high=vocab_size, size=(batch_size, block_size))
+
+        logits, loss = gpt_model.forward(idx)
+
+        assert logits.shape == (batch_size, 1, vocab_size)  # predict on last token only
+        assert loss is None
+
+    def test_forward_with_targets(self):
+        vocab_size = 4
+        num_layers = 2
+        num_heads = 2
+        block_size = 8
+        emb_size = 32
+        batch_size = 4
+        vocab_size = 4
+        gpt_model = gpt.GPT(
+            vocab_size=vocab_size,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            block_size=block_size,
+            emb_size=emb_size,
+        )
+        idx = torch.randint(high=vocab_size, size=(batch_size, block_size))
+        targets = torch.randint(high=vocab_size, size=(batch_size, block_size))
+
+        logits, loss = gpt_model.forward(idx, targets)
+
+        assert logits.shape == (batch_size, block_size, vocab_size)
+        assert loss is not None
+        assert loss.shape == ()
