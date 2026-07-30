@@ -2,6 +2,7 @@
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 
 class CausalSelfAttention(nn.Module):
@@ -109,3 +110,71 @@ class Transformer(nn.Module):
         x = x + self._attn(self._ln1(x))
         x = x + self._mlp(self._ln2(x))
         return x
+
+
+class GPT(nn.Module):
+    """Generative pre-trained transfomer model."""
+
+    def __init__(
+        self,
+        *,
+        vocab_size: int,
+        num_layers: int,
+        num_heads: int,
+        block_size: int,
+        emb_size: int,
+        dropout_p: float = 0.5,
+        bias: bool = False,
+    ) -> None:
+        super().__init__()
+        self._block_size = block_size
+        self._wte = nn.Embedding(vocab_size, emb_size)
+        self._wpe = nn.Embedding(block_size, emb_size)
+        self._drop = nn.Dropout(dropout_p)
+        self._h = nn.ModuleList(
+            [
+                Transformer(
+                    num_heads=num_heads,
+                    block_size=block_size,
+                    emb_size=emb_size,
+                    dropout_p=dropout_p,
+                    bias=bias,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+        self._ln_f = nn.LayerNorm(emb_size, bias=bias)
+        self._lm_head = nn.Linear(emb_size, vocab_size, bias=False)
+
+        # share weights between input token embeddings and output lm_head projection
+        self._lm_head.weight = self._wte.weight
+
+    def forward(
+        self, idx: torch.Tensor, targets: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        B, T = idx.shape
+        assert T <= self._block_size
+
+        # forward token and positional embeddings
+        token_emb = self._wte(idx)
+        device = idx.device
+        pos = torch.arange(T, dtype=torch.long, device=device)
+        pos_emb = self._wpe(pos)
+        x = self._drop(token_emb + pos_emb)
+
+        # forward through transformer blocks
+        for block in self._h:
+            x = block(x)
+
+        # forward final layer norm
+        x = self._ln_f(x)
+
+        if targets is not None:  # training
+            logits = self._lm_head(x)
+            loss = F.cross_entropy(logits.view(B * T, -1), targets.view(-1))
+        else:  # inference
+            # predict on last token in sequence only
+            logits = self._lm_head(x[:, [-1], :])
+            loss = None
+
+        return logits, loss
