@@ -149,6 +149,9 @@ class GPT(nn.Module):
         # share weights between input token embeddings and output lm_head projection
         self._lm_head.weight = self._wte.weight
 
+    def _init_weights(self, module: nn.Module) -> None:
+        raise NotImplementedError  # TODO: implement
+
     def forward(
         self, idx: torch.Tensor, targets: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
