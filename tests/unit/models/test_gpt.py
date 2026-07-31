@@ -180,7 +180,7 @@ class TestGPT:
         assert loss.shape == ()
 
     def test_generate(self, gpt_model, config):
-        input_length = 2
+        input_length = config.block_size + 1
         max_new_tokens = 3
         idx = torch.randint(high=config.vocab_size, size=(1, input_length))
 

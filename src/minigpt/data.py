@@ -23,6 +23,10 @@ class CharacterTokenizer:
         self._char_to_idx = {c: i for i, c in enumerate(self._chars)}
         self._idx_to_char = {i: c for c, i in self._char_to_idx.items()}
 
+    @property
+    def vocab_size(self) -> int:
+        return self._vocab_size
+
     def encode(self, text: str) -> list[int]:
         """Converts a text string into token IDs."""
         return [self._char_to_idx[c] for c in text]

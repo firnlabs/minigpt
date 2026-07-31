@@ -239,7 +239,9 @@ class GPT(nn.Module):
     @torch.no_grad()
     def generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
         for _ in range(max_new_tokens):
-            logits, _ = self(idx)
+            # Crop `idx`` to the last `block_size` tokens (i.e. context window)
+            idx_gen = idx[:, -self._block_size :]
+            logits, _ = self(idx_gen)
             # focus on the logit for the last generated token
             logits = logits[:, -1, :]
             probs = F.softmax(logits, dim=-1)
