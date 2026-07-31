@@ -129,11 +129,16 @@ class Transformer(nn.Module):
         self._ln2 = nn.LayerNorm(emb_size, bias=bias)
         self._mlp = MLP(emb_size, dropout_p, bias)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Use pre-LN residual connections
-        x = x + self._attn(self._ln1(x))
+    def forward(
+        self,
+        x: torch.Tensor,
+        prev_kv: tuple[torch.Tensor, torch.Tensor] | None = None,
+        return_kv: bool = False,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
+        attn_out, kv = self._attn(self._ln1(x), prev_kv=prev_kv, return_kv=return_kv)
+        x = x + attn_out
         x = x + self._mlp(self._ln2(x))
-        return x
+        return x, kv
 
 
 class GPT(nn.Module):

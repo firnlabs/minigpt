@@ -83,6 +83,15 @@ def attention(config) -> gpt.CausalSelfAttention:
     )
 
 
+@pytest.fixture
+def transformer(config) -> gpt.Transformer:
+    return gpt.Transformer(
+        num_heads=config.num_heads,
+        block_size=config.block_size,
+        emb_size=config.emb_size,
+    )
+
+
 class TestCausalSelfAttention:
     def test_forward(self, attention, config, hidden):
         logits, kv = attention.forward(hidden)
@@ -134,14 +143,8 @@ class TestMLP:
 
 
 class TestTransfomer:
-    def test_forward(self, config, hidden):
-        transformer = gpt.Transformer(
-            num_heads=config.num_heads,
-            block_size=config.block_size,
-            emb_size=config.emb_size,
-        )
-
-        out = transformer.forward(hidden)
+    def test_forward(self, transformer, config, hidden):
+        out, kv = transformer.forward(hidden)
 
         assert out.shape == (
             config.batch_size,
@@ -149,6 +152,17 @@ class TestTransfomer:
             config.emb_size,
         )
         assert not torch.allclose(out, hidden)
+        assert kv is None
+
+    def test_forward_with_kv_cache(self, transformer, config, hidden, prev_k, prev_v):
+        hidden_gen = hidden[:, :1, :]
+        out, kv = transformer.forward(
+            hidden_gen, prev_kv=(prev_k, prev_v), return_kv=True
+        )
+
+        assert out.shape == (config.batch_size, 1, config.emb_size)
+        assert not torch.allclose(out, hidden_gen)
+        assert isinstance(kv, tuple)
 
 
 class TestGPT:
