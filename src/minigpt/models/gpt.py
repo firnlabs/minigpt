@@ -231,21 +231,38 @@ class GPT(nn.Module):
         return optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
 
     def forward(
-        self, idx: torch.Tensor, targets: torch.Tensor | None = None
-    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        self,
+        idx: torch.Tensor,
+        targets: torch.Tensor | None = None,
+        prev_kvs: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
+        return_kvs: bool = False,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor | None,
+        list[tuple[torch.Tensor, torch.Tensor]] | None,
+    ]:
         B, T = idx.shape
         assert T <= self._block_size
+
+        # prev_k / prev_v shape: (B, NH, T, HS)
+        T_prev = prev_kvs[0][0].shape[2] if prev_kvs is not None else 0
 
         # forward token and positional embeddings
         token_emb = self._wte(idx)
         device = idx.device
-        pos = torch.arange(T, dtype=torch.long, device=device)
+        # Shift position range
+        pos = torch.arange(T_prev, T_prev + T, dtype=torch.long, device=device)
         pos_emb = self._wpe(pos)
         x = self._drop(token_emb + pos_emb)
 
         # forward through transformer blocks
-        for block in self._h:
-            x = block(x)
+        kvs = [] if return_kvs else None
+        for i, block in enumerate(self._h):
+            prev_kv = prev_kvs[i] if prev_kvs is not None else None
+            x, kv = block(x, prev_kv=prev_kv, return_kv=return_kvs)
+            if return_kvs:
+                assert kvs is not None
+                kvs.append(kv)
 
         # forward final layer norm
         x = self._ln_f(x)
@@ -258,7 +275,7 @@ class GPT(nn.Module):
             logits = self._lm_head(x[:, [-1], :])
             loss = None
 
-        return logits, loss
+        return logits, loss, kvs
 
     @torch.no_grad()
     def generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:

@@ -219,7 +219,7 @@ class TestGPT:
         assert groups[1]["weight_decay"] == 0.0
 
     def test_forward_no_targets(self, gpt_model, config, idx):
-        logits, loss = gpt_model.forward(idx)
+        logits, loss, kvs = gpt_model.forward(idx)
 
         # predict on last token only
         assert logits.shape == (
@@ -228,9 +228,10 @@ class TestGPT:
             config.vocab_size,
         )
         assert loss is None
+        assert kvs is None
 
     def test_forward_with_targets(self, gpt_model, config, idx, targets):
-        logits, loss = gpt_model.forward(idx, targets)
+        logits, loss, kvs = gpt_model.forward(idx, targets)
 
         assert logits.shape == (
             config.batch_size,
@@ -239,6 +240,34 @@ class TestGPT:
         )
         assert loss is not None
         assert loss.shape == ()
+        assert kvs is None
+
+    def test_forward_with_kv_cache(
+        self, gpt_model, config, idx, prev_k, prev_v, T_prev, head_size
+    ):
+        prev_kvs = [(prev_k, prev_v) for _ in range(config.num_layers)]
+        idx_gen = idx[:, :1]
+
+        logits, loss, kvs = gpt_model.forward(
+            idx_gen, prev_kvs=prev_kvs, return_kvs=True
+        )
+
+        assert logits.shape == (
+            config.batch_size,
+            1,
+            config.vocab_size,
+        )
+        assert loss is None
+        assert kvs is not None
+        assert len(kvs) == config.num_layers
+        for kv in kvs:
+            for t in kv:
+                assert t.shape == (
+                    config.batch_size,
+                    config.num_heads,
+                    T_prev + 1,
+                    head_size,
+                )
 
     def test_generate(self, gpt_model, config):
         input_length = config.block_size + 1
