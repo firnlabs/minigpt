@@ -43,7 +43,7 @@ class CausalSelfAttention(nn.Module):
         self,
         x: torch.Tensor,
         prev_kv: tuple[torch.Tensor, torch.Tensor] | None = None,
-        return_kv: bool = False,
+        use_cache: bool = False,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
         B, T, C = x.shape
         assert C == self._emb_size
@@ -81,7 +81,7 @@ class CausalSelfAttention(nn.Module):
         y = y.contiguous().view(B, T, C)  # shape: (B, T, C)
 
         out = self._resid_dropout(self._c_proj(y))  # shape: (B, T, C)
-        kv = (k, v) if return_kv else None
+        kv = (k, v) if use_cache else None
         return out, kv
 
 
@@ -133,9 +133,9 @@ class Transformer(nn.Module):
         self,
         x: torch.Tensor,
         prev_kv: tuple[torch.Tensor, torch.Tensor] | None = None,
-        return_kv: bool = False,
+        use_cache: bool = False,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
-        attn_out, kv = self._attn(self._ln1(x), prev_kv=prev_kv, return_kv=return_kv)
+        attn_out, kv = self._attn(self._ln1(x), prev_kv=prev_kv, use_cache=use_cache)
         x = x + attn_out
         x = x + self._mlp(self._ln2(x))
         return x, kv
@@ -235,7 +235,7 @@ class GPT(nn.Module):
         idx: torch.Tensor,
         targets: torch.Tensor | None = None,
         prev_kvs: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
-        return_kvs: bool = False,
+        use_cache: bool = False,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -256,11 +256,11 @@ class GPT(nn.Module):
         x = self._drop(token_emb + pos_emb)
 
         # forward through transformer blocks
-        kvs = [] if return_kvs else None
+        kvs = [] if use_cache else None
         for i, block in enumerate(self._h):
             prev_kv = prev_kvs[i] if prev_kvs is not None else None
-            x, kv = block(x, prev_kv=prev_kv, return_kv=return_kvs)
-            if return_kvs:
+            x, kv = block(x, prev_kv=prev_kv, use_cache=use_cache)
+            if use_cache:
                 assert kvs is not None
                 kvs.append(kv)
 
@@ -277,11 +277,22 @@ class GPT(nn.Module):
 
         return logits, loss, kvs
 
-    @torch.no_grad()
-    def generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
+    def _generate_no_cache(
+        self, idx: torch.Tensor, max_new_tokens: int
+    ) -> torch.Tensor:
+        idx_last = idx[:, -self._block_size :]
+        for _ in range(max_new_tokens):
+            logits, _, _ = self(idx_last)
+            logits = logits[:, -1, :]
+            probs = F.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            idx = torch.cat((idx, idx_next), dim=1)
+        return idx
+
+    def _generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
         # prefill phase - process initial prompt
         idx_last = idx[:, -self._block_size :]
-        logits, _, prev_kvs = self(idx_last, return_kvs=True)
+        logits, _, prev_kvs = self(idx_last, use_cache=True)
 
         # generation loop
         for _ in range(max_new_tokens):
@@ -294,8 +305,17 @@ class GPT(nn.Module):
                 # if sequence exceeds block_size, run forward on last block_size tokens
                 # without cache, effectively resetting the cache
                 idx_last = idx[:, -self._block_size :]
-                logits, _, prev_kvs = self(idx_last, return_kvs=True)
+                logits, _, prev_kvs = self(idx_last, use_cache=True)
             else:
-                logits, _, prev_kvs = self(idx_next, prev_kvs=prev_kvs, return_kvs=True)
+                logits, _, prev_kvs = self(idx_next, prev_kvs=prev_kvs, use_cache=True)
 
         return idx
+
+    @torch.no_grad()
+    def generate(
+        self, idx: torch.Tensor, max_new_tokens: int, use_cache=True
+    ) -> torch.Tensor:
+        if use_cache:
+            return self._generate(idx, max_new_tokens)
+
+        return self._generate_no_cache(idx, max_new_tokens)

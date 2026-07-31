@@ -117,7 +117,7 @@ class TestCausalSelfAttention:
         hidden_gen = hidden[:, :1, :]  # assume decoding phase
 
         out, kv = attention.forward(
-            hidden_gen, prev_kv=(prev_k, prev_v), return_kv=True
+            hidden_gen, prev_kv=(prev_k, prev_v), use_cache=True
         )
 
         assert out.shape == (config.batch_size, 1, config.emb_size)
@@ -157,7 +157,7 @@ class TestTransfomer:
     def test_forward_with_kv_cache(self, transformer, config, hidden, prev_k, prev_v):
         hidden_gen = hidden[:, :1, :]
         out, kv = transformer.forward(
-            hidden_gen, prev_kv=(prev_k, prev_v), return_kv=True
+            hidden_gen, prev_kv=(prev_k, prev_v), use_cache=True
         )
 
         assert out.shape == (config.batch_size, 1, config.emb_size)
@@ -249,7 +249,7 @@ class TestGPT:
         idx_gen = idx[:, :1]
 
         logits, loss, kvs = gpt_model.forward(
-            idx_gen, prev_kvs=prev_kvs, return_kvs=True
+            idx_gen, prev_kvs=prev_kvs, use_cache=True
         )
 
         assert logits.shape == (
@@ -269,11 +269,12 @@ class TestGPT:
                     head_size,
                 )
 
-    def test_generate(self, gpt_model, config):
+    @pytest.mark.parametrize("use_cache", [True, False])
+    def test_generate(self, gpt_model, config, use_cache):
         input_length = config.block_size + 1  # input larger than context window
         max_new_tokens = 3
         idx = torch.randint(high=config.vocab_size, size=(1, input_length))
 
-        out = gpt_model.generate(idx, max_new_tokens)
+        out = gpt_model.generate(idx, max_new_tokens, use_cache=use_cache)
 
         assert out.shape == (1, input_length + max_new_tokens)
