@@ -39,7 +39,12 @@ class CausalSelfAttention(nn.Module):
             )
         )
 
-    def forward(self, x: torch.Tensor, use_cache: bool = False) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        prev_kv: tuple[torch.Tensor, torch.Tensor] | None = None,
+        return_kv: bool = False,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
         B, T, C = x.shape
         assert C == self._emb_size
         assert T <= self._block_size
@@ -52,8 +57,20 @@ class CausalSelfAttention(nn.Module):
         k = k.view(B, T, self._num_heads, self._head_size).transpose(1, 2)
         v = v.view(B, T, self._num_heads, self._head_size).transpose(1, 2)
 
-        wei = self._head_size**-0.5 * q @ k.mT  # shape: (B, NH, T, T)
-        masked_wei = wei.masked_fill(self._mask[:, :, :T, :T] == 0, float("-inf"))
+        if prev_kv is not None:
+            prev_k, prev_v = prev_kv
+            k = torch.cat([prev_k, k], dim=2)  # shape: (B, NH, T_total, HS)
+            v = torch.cat([prev_v, v], dim=2)  # shape: (B, NH, T_total, HS)
+
+        T_total = k.shape[2]
+        assert T_total <= self._block_size
+        T_prev = T_total - T
+
+        wei = self._head_size**-0.5 * q @ k.mT  # shape: (B, NH, T, T_total)
+        # Apply the mask the last [T_prev, T_total] tokens
+        masked_wei = wei.masked_fill(
+            self._mask[:, :, T_prev:T_total, :T_total] == 0, float("-inf")
+        )
         norm_wei = torch.softmax(masked_wei, dim=-1)
         drop_wei = self._attn_dropout(norm_wei)  # shape: (B, NH, T, T)
 
@@ -63,7 +80,9 @@ class CausalSelfAttention(nn.Module):
         y = y.transpose(1, 2)  # shape: (B, T, NH, HS)
         y = y.contiguous().view(B, T, C)  # shape: (B, T, C)
 
-        return self._resid_dropout(self._c_proj(y))  # shape: (B, T, C)
+        out = self._resid_dropout(self._c_proj(y))  # shape: (B, T, C)
+        kv = (k, v) if return_kv else None
+        return out, kv
 
 
 class MLP(nn.Module):
@@ -110,11 +129,16 @@ class Transformer(nn.Module):
         self._ln2 = nn.LayerNorm(emb_size, bias=bias)
         self._mlp = MLP(emb_size, dropout_p, bias)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Use pre-LN residual connections
-        x = x + self._attn(self._ln1(x))
+    def forward(
+        self,
+        x: torch.Tensor,
+        prev_kv: tuple[torch.Tensor, torch.Tensor] | None = None,
+        return_kv: bool = False,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
+        attn_out, kv = self._attn(self._ln1(x), prev_kv=prev_kv, return_kv=return_kv)
+        x = x + attn_out
         x = x + self._mlp(self._ln2(x))
-        return x
+        return x, kv
 
 
 class GPT(nn.Module):
@@ -207,21 +231,38 @@ class GPT(nn.Module):
         return optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
 
     def forward(
-        self, idx: torch.Tensor, targets: torch.Tensor | None = None
-    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        self,
+        idx: torch.Tensor,
+        targets: torch.Tensor | None = None,
+        prev_kvs: list[tuple[torch.Tensor, torch.Tensor]] | None = None,
+        return_kvs: bool = False,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor | None,
+        list[tuple[torch.Tensor, torch.Tensor]] | None,
+    ]:
         B, T = idx.shape
         assert T <= self._block_size
+
+        # prev_k / prev_v shape: (B, NH, T, HS)
+        T_prev = prev_kvs[0][0].shape[2] if prev_kvs is not None else 0
 
         # forward token and positional embeddings
         token_emb = self._wte(idx)
         device = idx.device
-        pos = torch.arange(T, dtype=torch.long, device=device)
+        # Shift position range
+        pos = torch.arange(T_prev, T_prev + T, dtype=torch.long, device=device)
         pos_emb = self._wpe(pos)
         x = self._drop(token_emb + pos_emb)
 
         # forward through transformer blocks
-        for block in self._h:
-            x = block(x)
+        kvs = [] if return_kvs else None
+        for i, block in enumerate(self._h):
+            prev_kv = prev_kvs[i] if prev_kvs is not None else None
+            x, kv = block(x, prev_kv=prev_kv, return_kv=return_kvs)
+            if return_kvs:
+                assert kvs is not None
+                kvs.append(kv)
 
         # forward final layer norm
         x = self._ln_f(x)
@@ -234,17 +275,27 @@ class GPT(nn.Module):
             logits = self._lm_head(x[:, [-1], :])
             loss = None
 
-        return logits, loss
+        return logits, loss, kvs
 
     @torch.no_grad()
     def generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
+        # prefill phase - process initial prompt
+        idx_last = idx[:, -self._block_size :]
+        logits, _, prev_kvs = self(idx_last, return_kvs=True)
+
+        # generation loop
         for _ in range(max_new_tokens):
-            # Crop `idx`` to the last `block_size` tokens (i.e. context window)
-            idx_gen = idx[:, -self._block_size :]
-            logits, _ = self(idx_gen)
-            # focus on the logit for the last generated token
             logits = logits[:, -1, :]
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
+
+            if idx.shape[1] > self._block_size:
+                # if sequence exceeds block_size, run forward on last block_size tokens
+                # without cache, effectively resetting the cache
+                idx_last = idx[:, -self._block_size :]
+                logits, _, prev_kvs = self(idx_last, return_kvs=True)
+            else:
+                logits, _, prev_kvs = self(idx_next, prev_kvs=prev_kvs, return_kvs=True)
+
         return idx

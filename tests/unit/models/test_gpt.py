@@ -54,22 +54,78 @@ def gpt_model(config) -> gpt.GPT:
     return gpt.GPT(**config_dict)
 
 
+@pytest.fixture
+def T_prev(config) -> int:
+    return config.block_size // 2
+
+
+@pytest.fixture
+def head_size(config) -> int:
+    return config.emb_size // config.num_heads
+
+
+@pytest.fixture
+def prev_k(config, T_prev, head_size) -> torch.Tensor:
+    return torch.rand((config.batch_size, config.num_heads, T_prev, head_size))
+
+
+@pytest.fixture
+def prev_v(prev_k) -> torch.Tensor:
+    return torch.randn_like(prev_k)
+
+
+@pytest.fixture
+def attention(config) -> gpt.CausalSelfAttention:
+    return gpt.CausalSelfAttention(
+        num_heads=config.num_heads,
+        block_size=config.block_size,
+        emb_size=config.emb_size,
+    )
+
+
+@pytest.fixture
+def transformer(config) -> gpt.Transformer:
+    return gpt.Transformer(
+        num_heads=config.num_heads,
+        block_size=config.block_size,
+        emb_size=config.emb_size,
+    )
+
+
 class TestCausalSelfAttention:
-    def test_forward(self, config, hidden):
-        attn = gpt.CausalSelfAttention(
-            num_heads=config.num_heads,
-            block_size=config.block_size,
-            emb_size=config.emb_size,
-        )
+    def test_forward(self, attention, config, hidden):
+        logits, kv = attention.forward(hidden)
 
-        out = attn.forward(hidden)
-
-        assert not torch.allclose(out, hidden)
-        assert out.shape == (
+        assert not torch.allclose(logits, hidden)
+        assert logits.shape == (
             config.batch_size,
             config.block_size,
             config.emb_size,
         )
+        assert kv is None
+
+    def test_forward_with_kv_cache(
+        self,
+        attention,
+        config,
+        hidden,
+        prev_k,
+        prev_v,
+        T_prev,
+        head_size,
+    ):
+        hidden_gen = hidden[:, :1, :]  # assume decoding phase
+
+        out, kv = attention.forward(
+            hidden_gen, prev_kv=(prev_k, prev_v), return_kv=True
+        )
+
+        assert out.shape == (config.batch_size, 1, config.emb_size)
+        assert isinstance(kv, tuple)
+        k, v = kv
+        exp_kv_shape = (config.batch_size, config.num_heads, T_prev + 1, head_size)
+        assert k.shape == exp_kv_shape
+        assert v.shape == exp_kv_shape
 
 
 class TestMLP:
@@ -87,14 +143,8 @@ class TestMLP:
 
 
 class TestTransfomer:
-    def test_forward(self, config, hidden):
-        transformer = gpt.Transformer(
-            num_heads=config.num_heads,
-            block_size=config.block_size,
-            emb_size=config.emb_size,
-        )
-
-        out = transformer.forward(hidden)
+    def test_forward(self, transformer, config, hidden):
+        out, kv = transformer.forward(hidden)
 
         assert out.shape == (
             config.batch_size,
@@ -102,6 +152,17 @@ class TestTransfomer:
             config.emb_size,
         )
         assert not torch.allclose(out, hidden)
+        assert kv is None
+
+    def test_forward_with_kv_cache(self, transformer, config, hidden, prev_k, prev_v):
+        hidden_gen = hidden[:, :1, :]
+        out, kv = transformer.forward(
+            hidden_gen, prev_kv=(prev_k, prev_v), return_kv=True
+        )
+
+        assert out.shape == (config.batch_size, 1, config.emb_size)
+        assert not torch.allclose(out, hidden_gen)
+        assert isinstance(kv, tuple)
 
 
 class TestGPT:
@@ -158,7 +219,7 @@ class TestGPT:
         assert groups[1]["weight_decay"] == 0.0
 
     def test_forward_no_targets(self, gpt_model, config, idx):
-        logits, loss = gpt_model.forward(idx)
+        logits, loss, kvs = gpt_model.forward(idx)
 
         # predict on last token only
         assert logits.shape == (
@@ -167,9 +228,10 @@ class TestGPT:
             config.vocab_size,
         )
         assert loss is None
+        assert kvs is None
 
     def test_forward_with_targets(self, gpt_model, config, idx, targets):
-        logits, loss = gpt_model.forward(idx, targets)
+        logits, loss, kvs = gpt_model.forward(idx, targets)
 
         assert logits.shape == (
             config.batch_size,
@@ -178,9 +240,37 @@ class TestGPT:
         )
         assert loss is not None
         assert loss.shape == ()
+        assert kvs is None
+
+    def test_forward_with_kv_cache(
+        self, gpt_model, config, idx, prev_k, prev_v, T_prev, head_size
+    ):
+        prev_kvs = [(prev_k, prev_v) for _ in range(config.num_layers)]
+        idx_gen = idx[:, :1]
+
+        logits, loss, kvs = gpt_model.forward(
+            idx_gen, prev_kvs=prev_kvs, return_kvs=True
+        )
+
+        assert logits.shape == (
+            config.batch_size,
+            1,
+            config.vocab_size,
+        )
+        assert loss is None
+        assert kvs is not None
+        assert len(kvs) == config.num_layers
+        for kv in kvs:
+            for t in kv:
+                assert t.shape == (
+                    config.batch_size,
+                    config.num_heads,
+                    T_prev + 1,
+                    head_size,
+                )
 
     def test_generate(self, gpt_model, config):
-        input_length = config.block_size + 1
+        input_length = config.block_size + 1  # input larger than context window
         max_new_tokens = 3
         idx = torch.randint(high=config.vocab_size, size=(1, input_length))
 
