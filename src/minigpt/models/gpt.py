@@ -39,7 +39,12 @@ class CausalSelfAttention(nn.Module):
             )
         )
 
-    def forward(self, x: torch.Tensor, use_cache: bool = False) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        prev_kv: tuple[torch.Tensor, torch.Tensor] | None = None,
+        return_kv: bool = False,
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
         B, T, C = x.shape
         assert C == self._emb_size
         assert T <= self._block_size
@@ -52,8 +57,20 @@ class CausalSelfAttention(nn.Module):
         k = k.view(B, T, self._num_heads, self._head_size).transpose(1, 2)
         v = v.view(B, T, self._num_heads, self._head_size).transpose(1, 2)
 
-        wei = self._head_size**-0.5 * q @ k.mT  # shape: (B, NH, T, T)
-        masked_wei = wei.masked_fill(self._mask[:, :, :T, :T] == 0, float("-inf"))
+        if prev_kv is not None:
+            prev_k, prev_v = prev_kv
+            k = torch.cat([prev_k, k], dim=2)  # shape: (B, NH, T_total, HS)
+            v = torch.cat([prev_v, v], dim=2)  # shape: (B, NH, T_total, HS)
+
+        T_total = k.shape[2]
+        assert T_total <= self._block_size
+        T_prev = T_total - T
+
+        wei = self._head_size**-0.5 * q @ k.mT  # shape: (B, NH, T, T_total)
+        # Apply the mask the last [T_prev, T_total] tokens
+        masked_wei = wei.masked_fill(
+            self._mask[:, :, T_prev:T_total, :T_total] == 0, float("-inf")
+        )
         norm_wei = torch.softmax(masked_wei, dim=-1)
         drop_wei = self._attn_dropout(norm_wei)  # shape: (B, NH, T, T)
 
@@ -63,7 +80,9 @@ class CausalSelfAttention(nn.Module):
         y = y.transpose(1, 2)  # shape: (B, T, NH, HS)
         y = y.contiguous().view(B, T, C)  # shape: (B, T, C)
 
-        return self._resid_dropout(self._c_proj(y))  # shape: (B, T, C)
+        out = self._resid_dropout(self._c_proj(y))  # shape: (B, T, C)
+        kv = (k, v) if return_kv else None
+        return out, kv
 
 
 class MLP(nn.Module):

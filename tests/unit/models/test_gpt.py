@@ -54,22 +54,69 @@ def gpt_model(config) -> gpt.GPT:
     return gpt.GPT(**config_dict)
 
 
+@pytest.fixture
+def T_prev(config) -> int:
+    return config.block_size // 2
+
+
+@pytest.fixture
+def head_size(config) -> int:
+    return config.emb_size // config.num_heads
+
+
+@pytest.fixture
+def prev_k(config, T_prev, head_size) -> torch.Tensor:
+    return torch.rand((config.batch_size, config.num_heads, T_prev, head_size))
+
+
+@pytest.fixture
+def prev_v(prev_k) -> torch.Tensor:
+    return torch.randn_like(prev_k)
+
+
+@pytest.fixture
+def attention(config) -> gpt.CausalSelfAttention:
+    return gpt.CausalSelfAttention(
+        num_heads=config.num_heads,
+        block_size=config.block_size,
+        emb_size=config.emb_size,
+    )
+
+
 class TestCausalSelfAttention:
-    def test_forward(self, config, hidden):
-        attn = gpt.CausalSelfAttention(
-            num_heads=config.num_heads,
-            block_size=config.block_size,
-            emb_size=config.emb_size,
-        )
+    def test_forward(self, attention, config, hidden):
+        logits, kv = attention.forward(hidden)
 
-        out = attn.forward(hidden)
-
-        assert not torch.allclose(out, hidden)
-        assert out.shape == (
+        assert not torch.allclose(logits, hidden)
+        assert logits.shape == (
             config.batch_size,
             config.block_size,
             config.emb_size,
         )
+        assert kv is None
+
+    def test_forward_with_kv_cache(
+        self,
+        attention,
+        config,
+        hidden,
+        prev_k,
+        prev_v,
+        T_prev,
+        head_size,
+    ):
+        hidden_gen = hidden[:, :1, :]  # assume decoding phase
+
+        out, kv = attention.forward(
+            hidden_gen, prev_kv=(prev_k, prev_v), return_kv=True
+        )
+
+        assert out.shape == (config.batch_size, 1, config.emb_size)
+        assert isinstance(kv, tuple)
+        k, v = kv
+        exp_kv_shape = (config.batch_size, config.num_heads, T_prev + 1, head_size)
+        assert k.shape == exp_kv_shape
+        assert v.shape == exp_kv_shape
 
 
 class TestMLP:
