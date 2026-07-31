@@ -178,3 +178,12 @@ class TestGPT:
         )
         assert loss is not None
         assert loss.shape == ()
+
+    def test_generate(self, gpt_model, config):
+        input_length = 2
+        max_new_tokens = 3
+        idx = torch.randint(high=config.vocab_size, size=(1, input_length))
+
+        out = gpt_model.generate(idx, max_new_tokens)
+
+        assert out.shape == (1, input_length + max_new_tokens)
