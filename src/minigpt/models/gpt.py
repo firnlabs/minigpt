@@ -279,13 +279,23 @@ class GPT(nn.Module):
 
     @torch.no_grad()
     def generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
+        # prefill phase - process initial prompt
+        idx_last = idx[:, -self._block_size :]
+        logits, _, prev_kvs = self(idx_last, return_kvs=True)
+
+        # generation loop
         for _ in range(max_new_tokens):
-            # Crop `idx`` to the last `block_size` tokens (i.e. context window)
-            idx_gen = idx[:, -self._block_size :]
-            logits, _ = self(idx_gen)
-            # focus on the logit for the last generated token
             logits = logits[:, -1, :]
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
+
+            if idx.shape[1] > self._block_size:
+                # if sequence exceeds block_size, run forward on last block_size tokens
+                # without cache, effectively resetting the cache
+                idx_last = idx[:, -self._block_size :]
+                logits, _, prev_kvs = self(idx_last, return_kvs=True)
+            else:
+                logits, _, prev_kvs = self(idx_next, prev_kvs=prev_kvs, return_kvs=True)
+
         return idx

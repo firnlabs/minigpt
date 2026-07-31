@@ -45,7 +45,8 @@ def estimate_loss(model, train_dataloader, val_dataloader, eval_iters: int):
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             X, Y = next(dataloader)
-            _, loss = model(X, Y)
+            out_model = model(X, Y)
+            loss = out_model[1]
             losses[k] = loss.item()
         out[split] = losses.mean()
     model.train()  # set model train mode (currently no-op)
@@ -100,7 +101,8 @@ def train_model(
         xb, yb = next(train_dataloader)
 
         # evaluate the loss
-        _, loss = model(xb, yb)
+        out_model = model(xb, yb)
+        loss = out_model[1]
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         if grad_clip is not None:

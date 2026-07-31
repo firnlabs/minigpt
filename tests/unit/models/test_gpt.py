@@ -270,7 +270,7 @@ class TestGPT:
                 )
 
     def test_generate(self, gpt_model, config):
-        input_length = config.block_size + 1
+        input_length = config.block_size + 1  # input larger than context window
         max_new_tokens = 3
         idx = torch.randint(high=config.vocab_size, size=(1, input_length))
 
