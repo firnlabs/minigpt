@@ -33,7 +33,7 @@ class BigramLanguageModel(nn.Module):
         return logits, loss
 
     def generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
-        # idx shape: (B, T)
+        # expected idx shape: (B=1, T)
         for _ in range(max_new_tokens):
             logits, _ = self(idx)
             # focus only on the last timestep
