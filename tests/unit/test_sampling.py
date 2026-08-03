@@ -8,7 +8,7 @@ from minigpt import sampling
 
 @pytest.fixture
 def logits() -> torch.Tensor:
-    return torch.tensor([0.0, 0.9, 0.5, 0.1, 0.3])
+    return torch.tensor([0.05, 0.9, 0.5, 0.1, 0.3])
 
 
 class TestProcessLogits:
@@ -19,6 +19,20 @@ class TestProcessLogits:
         actual = sampling._process_logits(logits, temperature)
 
         assert torch.allclose(actual, expected)
+
+    def test_topk_none(self, logits):
+        actual = sampling._process_logits(logits, top_k=None)
+
+        assert torch.allclose(actual, logits)
+
+    def test_topk(self, logits):
+        top_k = 3
+
+        actual = sampling._process_logits(logits, top_k=top_k)
+
+        assert torch.allclose(
+            actual, torch.tensor([float("-inf"), 0.9, 0.5, float("-inf"), 0.3])
+        )
 
 
 class TestSampleNextToken:
@@ -34,3 +48,17 @@ class TestSampleNextToken:
 
         assert actual.shape == (1,)
         assert actual.item() in range(len(logits))
+
+    def test_top_k(self, logits):
+        top_k = 4
+        temperature = 1.0
+
+        actuals = []
+        for _ in range(10):
+            actual = sampling.sample_next_token(
+                logits, temperature=temperature, top_k=top_k
+            )
+            actuals.append(actual.item())
+
+        excluded = logits.argmin().item()
+        assert excluded not in actuals
