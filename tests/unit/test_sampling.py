@@ -26,3 +26,11 @@ class TestSampleNextToken:
         actual = sampling.sample_next_token(logits, temperature=0)
 
         assert actual == torch.tensor([1])
+
+    def test_temperature_nonzero(self, logits):
+        temperature = 0.5
+
+        actual = sampling.sample_next_token(logits, temperature=temperature)
+
+        assert actual.shape == (1,)
+        assert actual.item() in range(len(logits))
