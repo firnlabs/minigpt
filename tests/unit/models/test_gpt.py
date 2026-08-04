@@ -270,11 +270,30 @@ class TestGPT:
                 )
 
     @pytest.mark.parametrize("use_cache", [True, False])
-    def test_generate(self, gpt_model, config, use_cache):
+    def test_generate(self, gpt_model, config, use_cache, mocker):
         input_length = config.block_size + 1  # input larger than context window
         max_new_tokens = 3
         idx = torch.randint(high=config.vocab_size, size=(1, input_length))
+        temperature = 0.5
+        top_k = 2
+        top_p = 0.8
+        mock_sample_next_token = mocker.patch(
+            "minigpt.sampling.sample_next_token",
+            return_value=torch.randint(high=config.vocab_size, size=(1, 1)),
+        )
 
-        out = gpt_model.generate(idx, max_new_tokens, use_cache=use_cache)
+        out = gpt_model.generate(
+            idx,
+            max_new_tokens,
+            use_cache=use_cache,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+        )
 
         assert out.shape == (1, input_length + max_new_tokens)
+        assert mock_sample_next_token.call_count == max_new_tokens
+        first_call = mock_sample_next_token.call_args_list[0]
+        assert first_call == mocker.call(
+            mocker.ANY, temperature=temperature, top_k=top_k, top_p=top_p
+        )
