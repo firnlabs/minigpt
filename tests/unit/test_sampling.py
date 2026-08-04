@@ -76,3 +76,17 @@ class TestSampleNextToken:
 
         excluded = logits.argmin().item()
         assert excluded not in actuals
+
+    def test_top_p(self, logits):
+        top_p = 0.5
+        temperature = 1.0
+
+        actuals = set()
+        for _ in range(10):
+            actual = sampling.sample_next_token(
+                logits, temperature=temperature, top_p=top_p
+            )
+            actuals.add(actual.item())
+
+        excluded_tokens = {0, 3, 4}
+        assert excluded_tokens.isdisjoint(actuals)

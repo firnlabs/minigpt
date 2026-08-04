@@ -24,6 +24,7 @@ def _process_logits(
         values, _ = torch.topk(logits, top_k)
         logits[logits < values[..., -1, None]] = float("-inf")
 
+    # select logits by top_p if specified
     if top_p is not None:
         assert top_p > 0.0
         assert top_p <= 1.0
@@ -59,12 +60,17 @@ def _process_logits(
 
 
 def sample_next_token(
-    logits: torch.Tensor, temperature: float = 1.0, top_k: int | None = None
+    logits: torch.Tensor,
+    temperature: float = 1.0,
+    top_k: int | None = None,
+    top_p: float | None = None,
 ) -> torch.Tensor:
     if temperature == 0:
         # use greedy sampling
         return torch.argmax(logits, dim=-1, keepdim=True)
 
-    processed_logits = _process_logits(logits, temperature=temperature, top_k=top_k)
+    processed_logits = _process_logits(
+        logits, temperature=temperature, top_k=top_k, top_p=top_p
+    )
     probs = F.softmax(processed_logits, dim=-1)
     return torch.multinomial(probs, num_samples=1)
