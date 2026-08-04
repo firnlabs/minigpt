@@ -67,12 +67,12 @@ class TestSampleNextToken:
         top_k = 4
         temperature = 1.0
 
-        actuals = []
+        actuals = set()
         for _ in range(10):
             actual = sampling.sample_next_token(
                 logits, temperature=temperature, top_k=top_k
             )
-            actuals.append(actual.item())
+            actuals.add(actual.item())
 
         excluded = logits.argmin().item()
         assert excluded not in actuals
