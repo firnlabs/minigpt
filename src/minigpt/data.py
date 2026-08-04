@@ -51,7 +51,7 @@ class DataLoader:
         dataset: torch.Tensor,
         batch_size: int,
         block_size: int,
-        device: str = "cpu",
+        device: torch.device | str = "cpu",
     ) -> None:
         """Initialize."""
         self._dataset = dataset.to(device)

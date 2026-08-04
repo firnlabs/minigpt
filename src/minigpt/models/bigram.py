@@ -32,7 +32,14 @@ class BigramLanguageModel(nn.Module):
         loss = F.cross_entropy(logits, targets)
         return logits, loss
 
-    def generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
+    def generate(
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+        *args,
+        **kwargs,
+    ) -> torch.Tensor:
+        # TODO: integrate token sampling
         # expected idx shape: (B=1, T)
         for _ in range(max_new_tokens):
             logits, _ = self(idx)
