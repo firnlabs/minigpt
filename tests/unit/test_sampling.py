@@ -5,6 +5,8 @@ import torch
 
 from minigpt import sampling
 
+_NEG_INF = float("-inf")
+
 
 @pytest.fixture
 def logits() -> torch.Tensor:
@@ -20,18 +22,30 @@ class TestProcessLogits:
 
         assert torch.allclose(actual, expected)
 
-    def test_topk_none(self, logits):
+    def test_top_k_none(self, logits):
         actual = sampling._process_logits(logits, top_k=None)
 
         assert torch.allclose(actual, logits)
 
-    def test_topk(self, logits):
+    def test_top_k(self, logits):
         top_k = 3
 
         actual = sampling._process_logits(logits, top_k=top_k)
 
+        assert torch.allclose(actual, torch.tensor([_NEG_INF, 0.9, 0.5, _NEG_INF, 0.3]))
+
+    def test_top_p_none(self, logits):
+        actual = sampling._process_logits(logits, top_p=None)
+
+        assert torch.allclose(actual, logits)
+
+    def test_top_p(self, logits):
+        top_p = 0.5
+
+        actual = sampling._process_logits(logits, top_p=top_p)
+
         assert torch.allclose(
-            actual, torch.tensor([float("-inf"), 0.9, 0.5, float("-inf"), 0.3])
+            actual, torch.tensor([_NEG_INF, 0.9, 0.5, _NEG_INF, _NEG_INF])
         )
 
 
@@ -53,12 +67,26 @@ class TestSampleNextToken:
         top_k = 4
         temperature = 1.0
 
-        actuals = []
+        actuals = set()
         for _ in range(10):
             actual = sampling.sample_next_token(
                 logits, temperature=temperature, top_k=top_k
             )
-            actuals.append(actual.item())
+            actuals.add(actual.item())
 
         excluded = logits.argmin().item()
         assert excluded not in actuals
+
+    def test_top_p(self, logits):
+        top_p = 0.5
+        temperature = 1.0
+
+        actuals = set()
+        for _ in range(10):
+            actual = sampling.sample_next_token(
+                logits, temperature=temperature, top_p=top_p
+            )
+            actuals.add(actual.item())
+
+        excluded_tokens = {0, 3, 4}
+        assert excluded_tokens.isdisjoint(actuals)
