@@ -2,6 +2,7 @@
 
 import enum
 from typing import Annotated
+from typing import assert_never
 
 import torch
 from torch import optim
@@ -23,6 +24,16 @@ class DeviceChoice(enum.StrEnum):
 class ModelChoice(enum.StrEnum):
     BIGRAM = "bigram"
     GPT = "gpt"
+
+
+def _get_available_device() -> torch.device:
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+    return torch.device(device)
 
 
 def main(
@@ -50,14 +61,23 @@ def main(
     ),
     emb_size: int = typer.Option(64, min=1, help="For GPT: embedding dimension."),
     dropout: float = typer.Option(0.1, min=0.0, max=1.0, help="For GPT: dropout %."),
+    max_new_tokens: int = typer.Option(
+        500, min=1, help="Number of tokens to generate after training."
+    ),
+    temperature: float = typer.Option(
+        1.0, min=0.0, max=1.0, help="Temperature for token generation."
+    ),
+    top_k: int | None = typer.Option(None, min=1, help="Top-k for token generation."),
+    top_p: int | None = typer.Option(None, min=1, help="Top-p for token generation."),
 ) -> None:
     # NOTE: data and model may be too small to take full advantage of GPU parallelism.
     # CPU-to-GPU overhead is likely significant compared to performance gain on GPU.
     # CPU training could be faster.
-    if device == DeviceChoice.UNDEFINED:
-        device_ = torch.accelerator.current_accelerator() or "cpu"
-    else:
-        device_ = str(device)
+    device_ = (
+        torch.device(device)
+        if device != DeviceChoice.UNDEFINED
+        else _get_available_device()
+    )
     typer.echo(f"Using device: {device_}")
 
     # prepare data
@@ -66,26 +86,29 @@ def main(
     dataset = torch.tensor(tokenizer.encode(text), dtype=torch.long)
     train_data, val_data = data.train_test_split(dataset)
     train_dataloader = data.DataLoader(
-        train_data, batch_size=batch_size, block_size=block_size, device=device
+        train_data, batch_size=batch_size, block_size=block_size, device=device_
     )
     val_dataloader = data.DataLoader(
-        val_data, batch_size=batch_size, block_size=block_size, device=device
+        val_data, batch_size=batch_size, block_size=block_size, device=device_
     )
 
     # get model
-    if model_type == ModelChoice.GPT:
-        typer.echo("Using GPT model.")
-        model = gpt.GPT(
-            vocab_size=tokenizer.vocab_size,
-            num_layers=num_layers,
-            num_heads=num_heads,
-            block_size=block_size,
-            emb_size=emb_size,
-            dropout_p=dropout,
-        )
-    elif model_type == ModelChoice.BIGRAM:
-        typer.echo("Using bigram model.")
-        model = bigram.BigramLanguageModel(tokenizer.vocab_size)
+    match model_type:
+        case ModelChoice.GPT:
+            model = gpt.GPT(
+                vocab_size=tokenizer.vocab_size,
+                num_layers=num_layers,
+                num_heads=num_heads,
+                block_size=block_size,
+                emb_size=emb_size,
+                dropout_p=dropout,
+            )
+        case ModelChoice.BIGRAM:
+            model = bigram.BigramLanguageModel(tokenizer.vocab_size)
+        case _ as unreachable:  # pragma: no cover
+            # This should not happen since typer already validates model_type arg
+            assert_never(unreachable)
+    typer.echo(f"Using model: {model_type}")
 
     # train model
     m = model.to(device_)
@@ -102,8 +125,15 @@ def main(
     )
 
     # generate some text from the model
-    context = torch.zeros((1, 1), dtype=torch.long, device=device)
-    print(tokenizer.decode(m.generate(context, max_new_tokens=500)[0].tolist()))
+    context = torch.zeros((1, 1), dtype=torch.long, device=device_)
+    generated_tokens = m.generate(
+        context,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
+    )
+    typer.echo(tokenizer.decode(generated_tokens[0].tolist()))
 
 
 if __name__ == "__main__":
