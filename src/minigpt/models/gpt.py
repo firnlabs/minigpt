@@ -5,6 +5,8 @@ from torch import nn
 from torch import optim
 from torch.nn import functional as F
 
+from minigpt import sampling
+
 # Standard deviation for initialization described in Radford et al. (2018)
 # (https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf)
 _INIT_STD = 0.02
@@ -278,18 +280,31 @@ class GPT(nn.Module):
         return logits, loss, kvs
 
     def _generate_no_cache(
-        self, idx: torch.Tensor, max_new_tokens: int
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float | None = None,
     ) -> torch.Tensor:
         idx_last = idx[:, -self._block_size :]
         for _ in range(max_new_tokens):
             logits, _, _ = self(idx_last)
             logits = logits[:, -1, :]
-            probs = F.softmax(logits, dim=-1)
-            idx_next = torch.multinomial(probs, num_samples=1)
+            idx_next = sampling.sample_next_token(
+                logits, temperature=temperature, top_k=top_k, top_p=top_p
+            )
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
 
-    def _generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
+    def _generate(
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float | None = None,
+    ) -> torch.Tensor:
         # prefill phase - process initial prompt
         idx_last = idx[:, -self._block_size :]
         logits, _, prev_kvs = self(idx_last, use_cache=True)
@@ -297,8 +312,9 @@ class GPT(nn.Module):
         # generation loop
         for _ in range(max_new_tokens):
             logits = logits[:, -1, :]
-            probs = F.softmax(logits, dim=-1)
-            idx_next = torch.multinomial(probs, num_samples=1)
+            idx_next = sampling.sample_next_token(
+                logits, temperature=temperature, top_k=top_k, top_p=top_p
+            )
             idx = torch.cat((idx, idx_next), dim=1)
 
             if idx.shape[1] > self._block_size:
@@ -313,9 +329,14 @@ class GPT(nn.Module):
 
     @torch.no_grad()
     def generate(
-        self, idx: torch.Tensor, max_new_tokens: int, use_cache=True
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+        use_cache=True,
+        *args,
+        **kwargs,
     ) -> torch.Tensor:
         if use_cache:
-            return self._generate(idx, max_new_tokens)
+            return self._generate(idx, max_new_tokens, *args, **kwargs)
 
-        return self._generate_no_cache(idx, max_new_tokens)
+        return self._generate_no_cache(idx, max_new_tokens, *args, **kwargs)
