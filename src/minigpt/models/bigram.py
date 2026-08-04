@@ -8,6 +8,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from minigpt import sampling
+
 torch.manual_seed(1337)
 
 
@@ -36,8 +38,9 @@ class BigramLanguageModel(nn.Module):
         self,
         idx: torch.Tensor,
         max_new_tokens: int,
-        *args,
-        **kwargs,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float | None = None,
     ) -> torch.Tensor:
         # TODO: integrate token sampling
         # expected idx shape: (B=1, T)
@@ -45,8 +48,8 @@ class BigramLanguageModel(nn.Module):
             logits, _ = self(idx)
             # focus only on the last timestep
             logits = logits[:, -1, :]  # shape: (B, C)
-            probs = F.softmax(logits, dim=-1)  # shape: (B, C)
-            # sample from the distribution
-            idx_next = torch.multinomial(probs, num_samples=1)  # shape: (B, 1)
+            idx_next = sampling.sample_next_token(
+                logits, temperature=temperature, top_k=top_k, top_p=top_p
+            )
             idx = torch.cat((idx, idx_next), dim=1)  # shape: (B, T+1)
         return idx
