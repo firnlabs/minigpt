@@ -81,19 +81,19 @@ def main(
     )
 
     # get model
-    if model_type == ModelChoice.GPT:
-        typer.echo("Using GPT model.")
-        model = gpt.GPT(
-            vocab_size=tokenizer.vocab_size,
-            num_layers=num_layers,
-            num_heads=num_heads,
-            block_size=block_size,
-            emb_size=emb_size,
-            dropout_p=dropout,
-        )
-    elif model_type == ModelChoice.BIGRAM:
-        typer.echo("Using bigram model.")
-        model = bigram.BigramLanguageModel(tokenizer.vocab_size)
+    match model_type:
+        case ModelChoice.GPT:
+            model = gpt.GPT(
+                vocab_size=tokenizer.vocab_size,
+                num_layers=num_layers,
+                num_heads=num_heads,
+                block_size=block_size,
+                emb_size=emb_size,
+                dropout_p=dropout,
+            )
+        case ModelChoice.BIGRAM:
+            model = bigram.BigramLanguageModel(tokenizer.vocab_size)
+    typer.echo(f"Using model: {model_type}")
 
     # train model
     m = model.to(device_)
