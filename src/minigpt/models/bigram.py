@@ -42,7 +42,6 @@ class BigramLanguageModel(nn.Module):
         top_k: int | None = None,
         top_p: float | None = None,
     ) -> torch.Tensor:
-        # TODO: integrate token sampling
         # expected idx shape: (B=1, T)
         for _ in range(max_new_tokens):
             logits, _ = self(idx)

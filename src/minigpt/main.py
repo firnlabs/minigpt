@@ -2,6 +2,7 @@
 
 import enum
 from typing import Annotated
+from typing import assert_never
 
 import torch
 from torch import optim
@@ -23,6 +24,16 @@ class DeviceChoice(enum.StrEnum):
 class ModelChoice(enum.StrEnum):
     BIGRAM = "bigram"
     GPT = "gpt"
+
+
+def _get_available_device() -> torch.device:
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+    return torch.device(device)
 
 
 def main(
@@ -62,10 +73,11 @@ def main(
     # NOTE: data and model may be too small to take full advantage of GPU parallelism.
     # CPU-to-GPU overhead is likely significant compared to performance gain on GPU.
     # CPU training could be faster.
-    if device == DeviceChoice.UNDEFINED:
-        device_ = torch.accelerator.current_accelerator() or "cpu"
-    else:
-        device_ = str(device)
+    device_ = (
+        torch.device(device)
+        if device != DeviceChoice.UNDEFINED
+        else _get_available_device()
+    )
     typer.echo(f"Using device: {device_}")
 
     # prepare data
@@ -93,6 +105,9 @@ def main(
             )
         case ModelChoice.BIGRAM:
             model = bigram.BigramLanguageModel(tokenizer.vocab_size)
+        case _ as unreachable:  # pragma: no cover
+            # This should not happen since typer already validates model_type arg
+            assert_never(unreachable)
     typer.echo(f"Using model: {model_type}")
 
     # train model

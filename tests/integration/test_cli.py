@@ -1,23 +1,44 @@
 """Test the CLI interface of the minigpt package."""
 
 import pytest
+import torch
 import typer
 from typer.testing import CliRunner
 
-from minigpt.main import main
+from minigpt import main
 
 
 @pytest.fixture
 def cli_app():
     # Dynamically bind main to a Typer app instance for command execution
     app = typer.Typer()
-    app.command()(main)
+    app.command()(main.main)
     return app
 
 
 @pytest.fixture
 def mock_text_data() -> str:
     return "the quick brown fox jumps over the lazy dog"
+
+
+@pytest.mark.parametrize("device", ["cpu", "mps", "cuda"])
+def test_get_available_device(device, mocker):
+    mock_cuda_is_available = mocker.patch("torch.cuda.is_available")
+    mock_mps_is_available = mocker.patch("torch.backends.mps.is_available")
+    match device:
+        case "cuda":
+            mock_cuda_is_available.return_value = True
+            mock_mps_is_available.return_value = False
+        case "mps":
+            mock_cuda_is_available.return_value = False
+            mock_mps_is_available.return_value = True
+        case "cpu":
+            mock_cuda_is_available.return_value = False
+            mock_mps_is_available.return_value = False
+
+    actual = main._get_available_device()
+
+    assert actual == torch.device(device)
 
 
 @pytest.mark.parametrize("model_type", ["gpt", "bigram"])
