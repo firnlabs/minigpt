@@ -51,7 +51,10 @@ def targets(config) -> torch.Tensor:
 def gpt_model(config) -> gpt.GPT:
     config_dict = asdict(config)
     config_dict.pop("batch_size")
-    return gpt.GPT(**config_dict)
+    torch.manual_seed(42)
+    model = gpt.GPT(**config_dict)
+    model.eval()
+    return model
 
 
 @pytest.fixture
@@ -297,3 +300,47 @@ class TestGPT:
         assert first_call == mocker.call(
             mocker.ANY, temperature=temperature, top_k=top_k, top_p=top_p
         )
+
+    def test_generate_no_cache_context_growth(self, gpt_model):
+        """Verifies non-cached generation feeds newly generated tokens into forward."""
+        captured_inputs = []
+        orig_forward = gpt_model.forward
+
+        def spy_forward(idx, *args, **kwargs):
+            captured_inputs.append(idx.clone())
+            return orig_forward(idx, *args, **kwargs)
+
+        gpt_model.forward = spy_forward
+
+        prompt = torch.tensor([[1, 2, 3]])
+        gpt_model.generate(prompt, max_new_tokens=3, use_cache=False)
+
+        # Step 0: len == 3 (prompt)
+        # Step 1: len == 4 (prompt + token 1)
+        # Step 2: len == 5 (prompt + token 1 + token 2)
+        for step, inp in enumerate(captured_inputs):
+            expected_len = 3 + step
+            assert inp.shape[1] == expected_len, (
+                f"Step {step}: expected context length {expected_len}, "
+                f"but model received static context of length {inp.shape[1]}!"
+            )
+
+    def test_generate_cache_parity_greedy(self, gpt_model):
+        """Verifies that cached and non-cached generation produce identical tokens."""
+        prompt_tokens = torch.tensor([[1, 2, 3]])
+        max_new_tokens = 8
+
+        out_cached = gpt_model.generate(
+            prompt_tokens.clone(),
+            max_new_tokens=max_new_tokens,
+            use_cache=True,
+            temperature=0.0,
+        )
+        out_no_cache = gpt_model.generate(
+            prompt_tokens.clone(),
+            max_new_tokens=max_new_tokens,
+            use_cache=False,
+            temperature=0.0,
+        )
+
+        torch.testing.assert_close(out_cached, out_no_cache)

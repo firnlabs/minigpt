@@ -287,8 +287,8 @@ class GPT(nn.Module):
         top_k: int | None = None,
         top_p: float | None = None,
     ) -> torch.Tensor:
-        idx_last = idx[:, -self._block_size :]
         for _ in range(max_new_tokens):
+            idx_last = idx[:, -self._block_size :]
             logits, _, _ = self(idx_last)
             logits = logits[:, -1, :]
             idx_next = sampling.sample_next_token(
