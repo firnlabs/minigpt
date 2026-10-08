@@ -1,4 +1,4 @@
-"""Test the CLI interface of the minigpt package."""
+"""Integration tests for CLI execution."""
 
 import pytest
 import torch

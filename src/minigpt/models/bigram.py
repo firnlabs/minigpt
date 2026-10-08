@@ -23,7 +23,15 @@ class BigramLanguageModel(nn.Module):
     def forward(
         self, idx: torch.Tensor, targets: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        """Forward pass."""
+        """Computes next-token prediction logits and optional cross-entropy loss.
+
+        Args:
+            idx: Input token tensor of shape (batch_size, seq_len).
+            targets: Optional ground-truth token targets for loss computation.
+
+        Returns:
+            Tuple of (logits, loss). Loss is None if targets is None.
+        """
         logits = self._token_embedding_table(idx)  # shape: (B, T, C)
         if targets is None:
             return logits, None
@@ -42,6 +50,19 @@ class BigramLanguageModel(nn.Module):
         top_k: int | None = None,
         top_p: float | None = None,
     ) -> torch.Tensor:
+        """Autoregressively samples and appends continuation tokens.
+
+        Args:
+            idx: Initial context token tensor of shape (batch_size, seq_len).
+            max_new_tokens: Number of continuation tokens to sample.
+            temperature: Softmax temperature scaling logits.
+            top_k: Top-k filtering threshold.
+            top_p: Nucleus filtering cumulative probability threshold.
+
+        Returns:
+            Extended token sequence tensor of shape
+            (batch_size, seq_len + max_new_tokens).
+        """
         # expected idx shape: (B=1, T)
         for _ in range(max_new_tokens):
             logits, _ = self(idx)

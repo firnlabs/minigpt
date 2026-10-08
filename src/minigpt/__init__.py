@@ -1,1 +1,1 @@
-"""{{ project_title }} package."""
+"""A minimal PyTorch-based GPT model."""

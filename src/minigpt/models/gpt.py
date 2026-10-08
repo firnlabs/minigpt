@@ -1,5 +1,7 @@
 """Decoder-only generative pretrained transformer (GPT) model."""
 
+from typing import Any
+
 import torch
 from torch import nn
 from torch import optim
@@ -47,6 +49,16 @@ class CausalSelfAttention(nn.Module):
         prev_kv: tuple[torch.Tensor, torch.Tensor] | None = None,
         use_cache: bool = False,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
+        """Computes scaled multi-head self-attention with causal masking.
+
+        Args:
+            x: Input activation tensor of shape (batch_size, seq_len, emb_size).
+            prev_kv: Optional cached key and value tensors from previous steps.
+            use_cache: Whether to return updated key and value cache tensors.
+
+        Returns:
+            Tuple of (projected output tensor, optional updated (key, value) cache).
+        """
         B, T, C = x.shape
         assert C == self._emb_size
         assert T <= self._block_size
@@ -100,6 +112,14 @@ class MLP(nn.Module):
         self._dropout = nn.Dropout(dropout_p)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Computes two-layer feed-forward network with GELU activation.
+
+        Args:
+            x: Input activation tensor of shape (batch_size, seq_len, emb_size).
+
+        Returns:
+            Output activation tensor of shape (batch_size, seq_len, emb_size).
+        """
         x = self._c_fc(x)
         x = self._gelu(x)
         x = self._c_proj(x)
@@ -137,6 +157,16 @@ class Transformer(nn.Module):
         prev_kv: tuple[torch.Tensor, torch.Tensor] | None = None,
         use_cache: bool = False,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
+        """Applies pre-LayerNorm attention and MLP with residual connections.
+
+        Args:
+            x: Input hidden states of shape (batch_size, seq_len, emb_size).
+            prev_kv: Optional cached key and value tensors from previous steps.
+            use_cache: Whether to return updated key and value cache tensors.
+
+        Returns:
+            Tuple of (output hidden states, optional updated (key, value) cache).
+        """
         attn_out, kv = self._attn(self._ln1(x), prev_kv=prev_kv, use_cache=use_cache)
         x = x + attn_out
         x = x + self._mlp(self._ln2(x))
@@ -216,6 +246,18 @@ class GPT(nn.Module):
     def configure_optimizers(
         self, *, weight_decay: float, learning_rate: float, betas: tuple[float, float]
     ) -> optim.Optimizer:
+        """Configures AdamW with weight decay applied exclusively to 2D tensors.
+
+        Biases and LayerNorm parameters are excluded from weight decay.
+
+        Args:
+            weight_decay: Weight decay penalty for 2D parameters.
+            learning_rate: Initial optimizer learning rate.
+            betas: Adam beta coefficients (beta1, beta2).
+
+        Returns:
+            Configured AdamW optimizer instance.
+        """
         # Fetch all parameters that require gradients
         params = {n: p for n, p in self.named_parameters() if p.requires_grad}
 
@@ -243,6 +285,17 @@ class GPT(nn.Module):
         torch.Tensor | None,
         list[tuple[torch.Tensor, torch.Tensor]] | None,
     ]:
+        """Runs GPT forward pass computing logits and optional loss.
+
+        Args:
+            idx: Token sequence tensor of shape (batch_size, seq_len).
+            targets: Optional target token sequence for language modeling loss.
+            prev_kvs: Optional list of cached key-value tuples across layers.
+            use_cache: Whether to return updated key-value cache across layers.
+
+        Returns:
+            Tuple of (logits, loss, kvs).
+        """
         B, T = idx.shape
         assert T <= self._block_size
 
@@ -333,10 +386,22 @@ class GPT(nn.Module):
         self,
         idx: torch.Tensor,
         max_new_tokens: int,
-        use_cache=True,
-        *args,
-        **kwargs,
+        use_cache: bool = True,
+        *args: Any,
+        **kwargs: Any,
     ) -> torch.Tensor:
+        """Autoregressively generates continuation tokens from context prompts.
+
+        Args:
+            idx: Prompt token tensor of shape (batch_size, seq_len).
+            max_new_tokens: Number of continuation tokens to sample.
+            use_cache: Whether to use KV caching during generation.
+            *args: Positional arguments forwarded to sampling functions.
+            **kwargs: Keyword arguments forwarded to sampling functions.
+
+        Returns:
+            Tensor containing the prompt and generated continuation tokens.
+        """
         if use_cache:
             return self._generate(idx, max_new_tokens, *args, **kwargs)
 

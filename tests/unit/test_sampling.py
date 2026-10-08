@@ -1,5 +1,3 @@
-"""Tests for sampling.py."""
-
 import pytest
 import torch
 

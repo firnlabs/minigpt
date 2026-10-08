@@ -1,5 +1,3 @@
-"""Tests for models/gpt.py."""
-
 from dataclasses import asdict
 from dataclasses import dataclass
 

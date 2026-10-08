@@ -1,5 +1,3 @@
-"""Tests for training.py."""
-
 import pytest
 
 from minigpt import training

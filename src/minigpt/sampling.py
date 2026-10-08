@@ -65,6 +65,17 @@ def sample_next_token(
     top_k: int | None = None,
     top_p: float | None = None,
 ) -> torch.Tensor:
+    """Samples next token from logits with temperature, top-k, and nucleus filtering.
+
+    Args:
+        logits: Unnormalized logits of shape (batch_size, vocab_size).
+        temperature: Temperature factor for scaling logits (0 for greedy).
+        top_k: Top-k filtering threshold.
+        top_p: Nucleus filtering cumulative probability threshold.
+
+    Returns:
+        Sampled token tensor of shape (batch_size, 1).
+    """
     if temperature == 0:
         # use greedy sampling
         return torch.argmax(logits, dim=-1, keepdim=True)

@@ -8,12 +8,13 @@ TINY_SHAKESPEARE_URL = "https://raw.githubusercontent.com/karpathy/char-rnn/mast
 
 
 def get_text_from_url(url=TINY_SHAKESPEARE_URL) -> str:
+    """Fetches and decodes UTF-8 text from a target URL."""
     with request.urlopen(url) as response:
         return response.read().decode("utf-8")
 
 
 class CharacterTokenizer:
-    """Character-level tokenizer."""
+    """Character-level tokenizer with bijective index mappings."""
 
     def __init__(self, text: str):
         self._chars = sorted(list(set(text)))
@@ -39,12 +40,21 @@ class CharacterTokenizer:
 def train_test_split(
     indices: torch.Tensor, train_prop: float = 0.9
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Splits a 1D token sequence into training and validation splits.
+
+    Args:
+        indices: Full token sequence tensor.
+        train_prop: Proportion allocated to training split.
+
+    Returns:
+        Tuple of (train_split, test_split) tensors.
+    """
     n = int(train_prop * len(indices))
     return indices[:n], indices[n:]
 
 
 class DataLoader:
-    """Custom data loader."""
+    """Infinite streaming batch sampler yielding random context blocks."""
 
     def __init__(
         self,
@@ -53,13 +63,25 @@ class DataLoader:
         block_size: int,
         device: torch.device | str = "cpu",
     ) -> None:
-        """Initialize."""
+        """Initializes the data loader.
+
+        Args:
+            dataset: Full 1D tokenized dataset tensor.
+            batch_size: Number of sequences per batch.
+            block_size: Context length of each sequence.
+            device: Target device for sampled batches.
+        """
         self._dataset = dataset.to(device)
         self._batch_size = batch_size
         self._block_size = block_size
         self._device = device
 
     def __next__(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Samples a random batch of input contexts and target continuation tokens.
+
+        Returns:
+            Tuple of (inputs, targets) of shape (batch_size, block_size).
+        """
         data = self._dataset
         ix = torch.randint(
             len(data) - self._block_size, (self._batch_size,), device=self._device

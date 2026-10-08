@@ -1,4 +1,4 @@
-"""Integration test for training.py."""
+"""Integration tests for GPT and Bigram language model training loops."""
 
 from dataclasses import dataclass
 

@@ -1,5 +1,3 @@
-"""Tests for models/bigram.py."""
-
 import pytest
 import torch
 

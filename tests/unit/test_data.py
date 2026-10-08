@@ -1,5 +1,3 @@
-"""Tests for `data.py`."""
-
 import pytest
 import torch
 
