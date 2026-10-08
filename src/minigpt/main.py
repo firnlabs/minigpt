@@ -69,6 +69,18 @@ def main(
     ),
     top_k: int | None = typer.Option(None, min=1, help="Top-k for token generation."),
     top_p: int | None = typer.Option(None, min=1, help="Top-p for token generation."),
+    weight_decay: float = typer.Option(
+        0.1,
+        min=0.0,
+        max=1.0,
+        help="For GPT: optimizer weight decay for 2D weights.",
+    ),
+    beta1: float = typer.Option(
+        0.9, min=0.0, max=1.0, help="For GPT: AdamW beta1 (first moment decay)."
+    ),
+    beta2: float = typer.Option(
+        0.95, min=0.0, max=1.0, help="For GPT: AdamW beta2 (second moment decay)."
+    ),
 ) -> None:
     # NOTE: data and model may be too small to take full advantage of GPU parallelism.
     # CPU-to-GPU overhead is likely significant compared to performance gain on GPU.
@@ -112,7 +124,12 @@ def main(
 
     # train model
     m = model.to(device_)
-    optimizer = optim.AdamW(model.parameters(), lr=base_lr)
+    if isinstance(m, gpt.GPT):
+        optimizer = m.configure_optimizers(
+            weight_decay=weight_decay, learning_rate=base_lr, betas=(beta1, beta2)
+        )
+    else:
+        optimizer = optim.AdamW(m.parameters(), lr=base_lr)
     training.train_model(
         model,
         train_dataloader,
