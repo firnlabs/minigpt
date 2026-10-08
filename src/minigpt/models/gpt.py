@@ -248,6 +248,7 @@ class GPT(nn.Module):
 
         # prev_k / prev_v shape: (B, NH, T, HS)
         T_prev = prev_kvs[0][0].shape[2] if prev_kvs is not None else 0
+        assert T_prev + T <= self._block_size
 
         # forward token and positional embeddings
         token_emb = self._wte(idx)
