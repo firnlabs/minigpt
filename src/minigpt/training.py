@@ -36,7 +36,23 @@ def _get_learning_rate(
 
 
 @torch.no_grad()
-def estimate_loss(model, train_dataloader, val_dataloader, eval_iters: int):
+def estimate_loss(
+    model: nn.Module,
+    train_dataloader: data.DataLoader,
+    val_dataloader: data.DataLoader,
+    eval_iters: int,
+) -> dict[str, torch.Tensor]:
+    """Estimates mean loss over evaluation batches across train and validation splits.
+
+    Args:
+        model: Language model to evaluate.
+        train_dataloader: Data loader for training split.
+        val_dataloader: Data loader for validation split.
+        eval_iters: Number of batches to sample for evaluation.
+
+    Returns:
+        Dictionary mapping split names ('train', 'val') to mean scalar loss.
+    """
     out = {}
     model.eval()  # set model eval mode (currently no-op)
     for split, dataloader in zip(
@@ -67,7 +83,22 @@ def train_model(
     min_lr: float | None = None,
     grad_clip: float | None = None,
 ) -> None:
-    """Trains the model."""
+    """Trains a language model using mini-batch SGD with optional warmup and decay.
+
+    Args:
+        model: Language model being trained.
+        train_dataloader: Training split batch sampler.
+        val_dataloader: Validation split batch sampler.
+        optimizer: Torch optimizer updating model parameters.
+        max_iters: Total number of optimization steps.
+        eval_interval: Step frequency for evaluating and logging losses.
+        eval_iters: Number of batches evaluated during loss estimation.
+        use_lr_scheduler: Whether to apply cosine learning rate decay with warmup.
+        warmup_iters: Number of warmup iterations.
+        lr_decay_iters: Number of iterations before decay reaches minimum lr.
+        min_lr: Minimum learning rate floor after decay.
+        grad_clip: Maximum gradient norm for clipping.
+    """
     if use_lr_scheduler:
         base_lr = optimizer.param_groups[0]["lr"]
         if lr_decay_iters is None:

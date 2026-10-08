@@ -82,6 +82,7 @@ def main(
         0.95, min=0.0, max=1.0, help="For GPT: AdamW beta2 (second moment decay)."
     ),
 ) -> None:
+    """Trains a character-level language model and generates text."""
     # NOTE: data and model may be too small to take full advantage of GPU parallelism.
     # CPU-to-GPU overhead is likely significant compared to performance gain on GPU.
     # CPU training could be faster.
