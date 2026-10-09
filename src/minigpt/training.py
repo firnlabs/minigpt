@@ -54,7 +54,7 @@ def estimate_loss(
         Dictionary mapping split names ('train', 'val') to mean scalar loss.
     """
     out = {}
-    model.eval()  # set model eval mode (currently no-op)
+    model.eval()  # Disable dropout during evaluation
     for split, dataloader in zip(
         ("train", "val"), (train_dataloader, val_dataloader), strict=True
     ):
@@ -65,7 +65,7 @@ def estimate_loss(
             loss = out_model[1]
             losses[k] = loss.item()
         out[split] = losses.mean()
-    model.train()  # set model train mode (currently no-op)
+    model.train()  # Re-enable dropout for training
     return out
 
 
